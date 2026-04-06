@@ -1,0 +1,56 @@
+name: Sync Widget Index
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-widget-index
+  cancel-in-progress: false
+
+jobs:
+  sync-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create GitHub App token for widgets-repo
+        id: source-app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.WIDGETS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WIDGETS_GITHUB_APP_PRIVATE_KEY }}
+          owner: NekoStash
+          repositories: widgets-repo
+
+      - name: Create GitHub App token for widgets-index
+        id: target-app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.WIDGETS_GITHUB_APP_ID }}
+          private-key: ${{ secrets.WIDGETS_GITHUB_APP_PRIVATE_KEY }}
+          owner: NekoStash
+          repositories: widgets-index
+
+      - name: Sync widget index repository
+        env:
+          SOURCE_REPO_OWNER: NekoStash
+          SOURCE_REPO_NAME: widgets-repo
+          SOURCE_REPO_TOKEN: ${{ steps.source-app-token.outputs.token }}
+          TARGET_REPO_OWNER: NekoStash
+          TARGET_REPO_NAME: widgets-index
+          TARGET_REPO_TOKEN: ${{ steps.target-app-token.outputs.token }}
+          PUBLIC_GITHUB_TOKEN: ${{ github.token }}
+          SEARCH_SHARD_COUNT: '64'
+          README_SEARCH_LIMIT: '20000'
+        run: node ".github/scripts/sync-widget-index.mjs"
