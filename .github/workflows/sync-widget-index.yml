@@ -28,8 +28,8 @@ jobs:
         id: source-app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ secrets.WIDGETS_GITHUB_APP_ID }}
-          private-key: ${{ secrets.WIDGETS_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.WIDGETS_REPO_APP_ID }}
+          private-key: ${{ secrets.WIDGETS_REPO_APP_PRIVATE_KEY }}
           owner: NekoStash
           repositories: widgets-repo
 
