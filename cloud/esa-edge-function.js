@@ -31,15 +31,7 @@ async function handleRequest(request) {
     return proxyJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(componentMatch[1])}/${componentMatch[2]}.json`);
   }
 
-  return json({
-    ok: true,
-    endpoints: [
-      '/search?q=music',
-      '/component/test_widget/description',
-      '/component/test_widget/readme',
-      '/component/test_widget/releases',
-    ],
-  });
+  return json({msg: "REAREye RearStore Endpoint"});
 }
 
 async function handleSearch(url) {

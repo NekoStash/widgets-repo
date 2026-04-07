@@ -26,15 +26,7 @@ export default {
       return handleComponentFile(componentMatch[1], componentMatch[2], ctx);
     }
 
-    return json({
-      ok: true,
-      endpoints: [
-        '/search?q=music',
-        '/component/test_widget/description',
-        '/component/test_widget/readme',
-        '/component/test_widget/releases',
-      ],
-    });
+    return json({msg: "REAREye RearStore Endpoint"});
   },
 };
 
