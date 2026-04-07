@@ -22,11 +22,11 @@
 
 详情接口按目录代理：
 
-- `/component/{id}/description`
-- `/component/{id}/author`
-- `/component/{id}/readme`
-- `/component/{id}/releases`
-- `/component/{id}/releases/{version}/{file}`
+- `/widget/{id}/description`
+- `/widget/{id}/author`
+- `/widget/{id}/readme`
+- `/widget/{id}/releases`
+- `/widget/{id}/releases/{version}/{file}`
 - `/recent-updates`
 
 Release 文件下载代理会从 `data/{id}/releases.json` 找到对应资源的 `downloadUrl`，再由边缘节点代理下载。
@@ -58,8 +58,8 @@ export default {
       ok: true,
       endpoints: [
         "/search?q=music",
-        "/component/test_widget/description",
-        "/component/test_widget/readme",
+        "/widget/test_widget/description",
+        "/widget/test_widget/readme",
       ],
     });
   },
@@ -303,8 +303,8 @@ async function handleRequest(request) {
     ok: true,
     endpoints: [
       "/search?q=music",
-      "/component/test_widget/description",
-      "/component/test_widget/releases",
+      "/widget/test_widget/description",
+      "/widget/test_widget/releases",
     ],
   });
 }

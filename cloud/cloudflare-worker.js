@@ -8,7 +8,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    const releaseAssetMatch = url.pathname.match(/^\/component\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
+    const releaseAssetMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
     if (releaseAssetMatch) {
       return withRouteCache(request, ctx, RELEASE_FILE_CACHE_TTL_SECONDS, () =>
         handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], ctx),
@@ -23,10 +23,10 @@ export default {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(ctx));
     }
 
-    const componentMatch = url.pathname.match(/^\/component\/([^/]+)\/(description|author|readme|releases)$/);
-    if (componentMatch) {
+    const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|readme|releases)$/);
+    if (widgetMatch) {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
-        handleComponentFile(componentMatch[1], componentMatch[2], ctx),
+        handleWidgetFile(widgetMatch[1], widgetMatch[2], ctx),
       );
     }
 
@@ -73,7 +73,7 @@ async function handleSearch(request, ctx) {
   });
 }
 
-async function handleComponentFile(id, kind, ctx) {
+async function handleWidgetFile(id, kind, ctx) {
   return await fetchUpstreamJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/${kind}.json`);
 }
 

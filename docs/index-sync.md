@@ -37,6 +37,7 @@
 
 - Cloudflare Worker 和阿里云 ESA 的查询/代理脚本见 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`
 - 说明示例见 `docs/edge-search-examples.md`
+- 精简版边缘 API 文档见 `docs/edge-api-spec.md`
 - JSON 索引与数据缓存 `1` 小时，Release 文件下载代理缓存 `30` 天
 - Cloudflare 使用 `caches.default` 缓存当前路由响应，ESA 使用官方全局 `cache.get/put` 缓存当前路由响应
 

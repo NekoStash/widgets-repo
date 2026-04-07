@@ -13,7 +13,7 @@ export default {
 async function handleRequest(request) {
   const url = new URL(request.url);
 
-  const releaseAssetMatch = url.pathname.match(/^\/component\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
+  const releaseAssetMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
   if (releaseAssetMatch) {
     return handleReleaseAsset(releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3]);
   }
@@ -26,9 +26,9 @@ async function handleRequest(request) {
     return proxyJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
   }
 
-  const componentMatch = url.pathname.match(/^\/component\/([^/]+)\/(description|author|readme|releases)$/);
-  if (componentMatch) {
-    return proxyJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(componentMatch[1])}/${componentMatch[2]}.json`);
+  const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|readme|releases)$/);
+  if (widgetMatch) {
+    return proxyJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(widgetMatch[1])}/${widgetMatch[2]}.json`);
   }
 
   return json({msg: "REAREye RearStore Endpoint"});
