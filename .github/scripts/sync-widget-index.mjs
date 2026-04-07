@@ -186,6 +186,24 @@ async function getContents(token, owner, repo, filePath) {
   return await requestJson('GET', `/repos/${owner}/${repo}/contents/${encodePath(filePath)}`, token);
 }
 
+async function getOptionalJsonFile(token, owner, repo, filePath) {
+  try {
+    const file = await getContents(token, owner, repo, filePath);
+
+    if (Array.isArray(file)) {
+      throw new Error(`Unexpected directory response for ${owner}/${repo}/${filePath}.`);
+    }
+
+    return JSON.parse(decodeBase64(file.content || ''));
+  } catch (error) {
+    if (error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 async function getReadme(token, owner, repo) {
   try {
     const readme = await requestJson('GET', `/repos/${owner}/${repo}/readme`, token);
@@ -284,6 +302,7 @@ function mapRelease(release) {
 function buildSearchSource({ id, repository, author, readme, readmeSearchLimit }) {
   const searchParts = [
     id,
+    repository.widgetName || '',
     repository.name,
     repository.fullName,
     repository.description || '',
@@ -296,6 +315,36 @@ function buildSearchSource({ id, repository, author, readme, readmeSearchLimit }
   }
 
   return searchParts.filter(Boolean).join('\n');
+}
+
+function buildSummaryFiles(components, generatedAt, sourceRepo) {
+  const summaries = Object.fromEntries(
+    components
+      .slice()
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((component) => [
+        component.id,
+        {
+          id: component.id,
+          name: component.repository.widgetName,
+          description: component.repository.description,
+          author: component.author,
+        },
+      ]),
+  );
+
+  return new Map([
+    [
+      'indexes/component-summaries.json',
+      toJson({
+        version: 1,
+        generatedAt,
+        sourceRepo: `${sourceRepo.owner}/${sourceRepo.repo}`,
+        componentCount: components.length,
+        components: summaries,
+      }),
+    ],
+  ]);
 }
 
 function buildSearchFiles(components, generatedAt, shardCount, readmeSearchLimit, sourceRepo) {
@@ -385,9 +434,11 @@ function buildComponentFiles(component, generatedAt) {
       `${basePath}/description.json`,
       toJson({
         id: component.id,
+        name: component.repository.widgetName,
         indexedAt: generatedAt,
         sourceMetadataPath: component.sourceMetadataPath,
         repository: {
+          widgetName: component.repository.widgetName,
           owner: component.repository.owner,
           name: component.repository.name,
           fullName: component.repository.fullName,
@@ -465,16 +516,23 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
   }
 
   const repository = await getRepository(publicToken, parsedRepo.owner, parsedRepo.repo);
-  const [authorProfile, readme, releases] = await Promise.all([
+  const [authorProfile, readme, releases, widgetInfo] = await Promise.all([
     getUser(publicToken, repository.owner.login),
     getReadme(publicToken, parsedRepo.owner, parsedRepo.repo),
     listReleases(publicToken, parsedRepo.owner, parsedRepo.repo),
+    getOptionalJsonFile(publicToken, parsedRepo.owner, parsedRepo.repo, 'widget_info.json'),
   ]);
+
+  const widgetName =
+    widgetInfo && typeof widgetInfo === 'object' && typeof widgetInfo.name === 'string' && widgetInfo.name.trim()
+      ? widgetInfo.name.trim()
+      : repository.name;
 
   return {
     id: metadata.id,
     sourceMetadataPath: metadataPath,
     repository: {
+      widgetName,
       owner: repository.owner.login,
       name: repository.name,
       fullName: repository.full_name,
@@ -521,6 +579,10 @@ function buildDesiredFiles(components, generatedAt, sourceRepo, shardCount, read
     readmeSearchLimit,
     sourceRepo,
   )) {
+    files.set(filePath, content);
+  }
+
+  for (const [filePath, content] of buildSummaryFiles(components, generatedAt, sourceRepo)) {
     files.set(filePath, content);
   }
 
