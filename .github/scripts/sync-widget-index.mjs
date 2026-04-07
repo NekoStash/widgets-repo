@@ -317,7 +317,7 @@ function buildSearchSource({ id, repository, author, readme, readmeSearchLimit }
   return searchParts.filter(Boolean).join('\n');
 }
 
-function buildSummaryFiles(components, generatedAt, sourceRepo) {
+function buildSummaryFiles(components, sourceRepo) {
   const summaries = Object.fromEntries(
     components
       .slice()
@@ -338,7 +338,6 @@ function buildSummaryFiles(components, generatedAt, sourceRepo) {
       'indexes/component-summaries.json',
       toJson({
         version: 1,
-        generatedAt,
         sourceRepo: `${sourceRepo.owner}/${sourceRepo.repo}`,
         componentCount: components.length,
         components: summaries,
@@ -347,7 +346,102 @@ function buildSummaryFiles(components, generatedAt, sourceRepo) {
   ]);
 }
 
-function buildSearchFiles(components, generatedAt, shardCount, readmeSearchLimit, sourceRepo) {
+function getLatestReleaseTimestamp(releases = []) {
+  let latest = null;
+
+  for (const release of releases) {
+    for (const value of [release.publishedAt, release.createdAt]) {
+      if (!value) {
+        continue;
+      }
+
+      const timestamp = Date.parse(value);
+      if (Number.isNaN(timestamp)) {
+        continue;
+      }
+
+      if (latest === null || timestamp > latest) {
+        latest = timestamp;
+      }
+    }
+  }
+
+  return latest;
+}
+
+function getComponentUpdatedTimestamp(component) {
+  const candidates = [
+    component.repository.pushedAt,
+    component.repository.updatedAt,
+  ];
+  const latestReleaseTimestamp = getLatestReleaseTimestamp(component.releases);
+
+  if (latestReleaseTimestamp !== null) {
+    candidates.push(new Date(latestReleaseTimestamp).toISOString());
+  }
+
+  let latest = null;
+
+  for (const value of candidates) {
+    if (!value) {
+      continue;
+    }
+
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) {
+      continue;
+    }
+
+    if (latest === null || timestamp > latest) {
+      latest = timestamp;
+    }
+  }
+
+  return latest;
+}
+
+function buildRecentUpdatesFiles(components, sourceRepo) {
+  const items = components
+    .map((component) => ({
+      id: component.id,
+      name: component.repository.widgetName,
+      description: component.repository.description,
+      author: component.author,
+      updatedAt: (() => {
+        const timestamp = getComponentUpdatedTimestamp(component);
+        return timestamp === null ? null : new Date(timestamp).toISOString();
+      })(),
+      repository: {
+        fullName: component.repository.fullName,
+        url: component.repository.url,
+      },
+    }))
+    .sort((left, right) => {
+      const leftTimestamp = left.updatedAt ? Date.parse(left.updatedAt) : 0;
+      const rightTimestamp = right.updatedAt ? Date.parse(right.updatedAt) : 0;
+
+      if (leftTimestamp !== rightTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      return left.id.localeCompare(right.id);
+    })
+    .slice(0, 20);
+
+  return new Map([
+    [
+      'indexes/recent-updates.json',
+      toJson({
+        version: 1,
+        sourceRepo: `${sourceRepo.owner}/${sourceRepo.repo}`,
+        limit: 20,
+        items,
+      }),
+    ],
+  ]);
+}
+
+function buildSearchFiles(components, shardCount, readmeSearchLimit, sourceRepo) {
   const shardMaps = new Map();
 
   for (const component of components) {
@@ -408,7 +502,6 @@ function buildSearchFiles(components, generatedAt, shardCount, readmeSearchLimit
     'indexes/search-manifest.json',
     toJson({
       version: 1,
-      generatedAt,
       sourceRepo: `${sourceRepo.owner}/${sourceRepo.repo}`,
       shardCount,
       tokenizer: {
@@ -426,7 +519,7 @@ function buildSearchFiles(components, generatedAt, shardCount, readmeSearchLimit
   return files;
 }
 
-function buildComponentFiles(component, generatedAt) {
+function buildComponentFiles(component) {
   const basePath = `data/${component.id}`;
 
   return new Map([
@@ -435,7 +528,6 @@ function buildComponentFiles(component, generatedAt) {
       toJson({
         id: component.id,
         name: component.repository.widgetName,
-        indexedAt: generatedAt,
         sourceMetadataPath: component.sourceMetadataPath,
         repository: {
           widgetName: component.repository.widgetName,
@@ -462,7 +554,6 @@ function buildComponentFiles(component, generatedAt) {
       `${basePath}/author.json`,
       toJson({
         id: component.id,
-        indexedAt: generatedAt,
         author: component.author,
       }),
     ],
@@ -470,7 +561,6 @@ function buildComponentFiles(component, generatedAt) {
       `${basePath}/readme.json`,
       toJson({
         id: component.id,
-        indexedAt: generatedAt,
         readme: component.readme,
       }),
     ],
@@ -478,7 +568,6 @@ function buildComponentFiles(component, generatedAt) {
       `${basePath}/releases.json`,
       toJson({
         id: component.id,
-        indexedAt: generatedAt,
         releases: component.releases,
       }),
     ],
@@ -563,18 +652,17 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
   };
 }
 
-function buildDesiredFiles(components, generatedAt, sourceRepo, shardCount, readmeSearchLimit) {
+function buildDesiredFiles(components, sourceRepo, shardCount, readmeSearchLimit) {
   const files = new Map();
 
   for (const component of components) {
-    for (const [filePath, content] of buildComponentFiles(component, generatedAt)) {
+    for (const [filePath, content] of buildComponentFiles(component)) {
       files.set(filePath, content);
     }
   }
 
   for (const [filePath, content] of buildSearchFiles(
     components,
-    generatedAt,
     shardCount,
     readmeSearchLimit,
     sourceRepo,
@@ -582,7 +670,11 @@ function buildDesiredFiles(components, generatedAt, sourceRepo, shardCount, read
     files.set(filePath, content);
   }
 
-  for (const [filePath, content] of buildSummaryFiles(components, generatedAt, sourceRepo)) {
+  for (const [filePath, content] of buildSummaryFiles(components, sourceRepo)) {
+    files.set(filePath, content);
+  }
+
+  for (const [filePath, content] of buildRecentUpdatesFiles(components, sourceRepo)) {
     files.set(filePath, content);
   }
 
@@ -758,8 +850,7 @@ export async function run() {
     );
   }
 
-  const generatedAt = new Date().toISOString();
-  const desiredFiles = buildDesiredFiles(components, generatedAt, sourceRepo, shardCount, readmeSearchLimit);
+  const desiredFiles = buildDesiredFiles(components, sourceRepo, shardCount, readmeSearchLimit);
 
   if (localOutputDir) {
     await writeLocalOutput(localOutputDir, desiredFiles);

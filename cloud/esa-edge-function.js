@@ -1,5 +1,6 @@
 const INDEX_BASE_URL = 'https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main';
 const CACHE_TTL_SECONDS = 3600;
+const RELEASE_FILE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SHARD_COUNT = 64;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 
@@ -12,8 +13,17 @@ export default {
 async function handleRequest(request) {
   const url = new URL(request.url);
 
+  const releaseAssetMatch = url.pathname.match(/^\/component\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
+  if (releaseAssetMatch) {
+    return handleReleaseAsset(releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3]);
+  }
+
   if (url.pathname === '/search') {
     return handleSearch(url);
+  }
+
+  if (url.pathname === '/recent-updates') {
+    return proxyJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
   }
 
   const componentMatch = url.pathname.match(/^\/component\/([^/]+)\/(description|author|readme|releases)$/);
@@ -69,6 +79,31 @@ async function handleSearch(url) {
   });
 }
 
+async function handleReleaseAsset(id, version, fileName) {
+  const releasesDoc = await fetchJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`);
+  const decodedVersion = decodeURIComponent(version);
+  const decodedFileName = decodeURIComponent(fileName);
+  const asset = findReleaseAsset(releasesDoc.releases || [], decodedVersion, decodedFileName);
+
+  if (!asset) {
+    return json({ ok: false, error: 'Release asset not found' }, 404, CACHE_TTL_SECONDS);
+  }
+
+  const response = await fetch(asset.downloadUrl);
+  if (!response.ok) {
+    return json({ ok: false, error: 'Upstream download failed', status: response.status }, response.status, 60);
+  }
+
+  const proxied = new Response(response.body, response);
+  proxied.headers.set('cache-control', `public, max-age=${RELEASE_FILE_CACHE_TTL_SECONDS}, s-maxage=${RELEASE_FILE_CACHE_TTL_SECONDS}`);
+
+  if (!proxied.headers.has('content-disposition')) {
+    proxied.headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(decodedFileName)}`);
+  }
+
+  return proxied;
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, {
     headers: {
@@ -100,6 +135,22 @@ async function proxyJson(url) {
   return proxied;
 }
 
+function findReleaseAsset(releases, version, fileName) {
+  for (const release of releases) {
+    if (release.tagName !== version && release.name !== version) {
+      continue;
+    }
+
+    for (const asset of release.assets || []) {
+      if (asset.name === fileName) {
+        return asset;
+      }
+    }
+  }
+
+  return null;
+}
+
 function intersectTokenMatches(tokens, shardMap) {
   let result = null;
 
@@ -125,12 +176,12 @@ function intersectTokenMatches(tokens, shardMap) {
   return result ? [...result].sort() : [];
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, ttlSeconds = CACHE_TTL_SECONDS) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_TTL_SECONDS}, s-maxage=${CACHE_TTL_SECONDS}`,
+      'cache-control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
     },
   });
 }

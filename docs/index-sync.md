@@ -20,6 +20,7 @@
 - `data/{componentId}/readme.json`
 - `data/{componentId}/releases.json`
 - `indexes/component-summaries.json`
+- `indexes/recent-updates.json`
 - `indexes/search-manifest.json`
 - `indexes/search-shards/{00..3f}.json`
 
@@ -29,11 +30,14 @@
 - README 只截取前 `20000` 个字符参与搜索建索引，避免索引过大
 - 索引按 `fnv1a32(token) % 64` 分片，适合客户端或边缘环境按查询 token 只拉取所需 shard
 - 搜索结果摘要可以直接使用 `indexes/component-summaries.json`，无需额外读取 README 或 Releases
+- 最近更新列表可以直接使用 `indexes/recent-updates.json`，按最近更新时间返回最多 `20` 个组件
+- 为了避免定时任务产生无意义提交，产物不包含 `indexedAt` 或 `generatedAt` 这类运行时戳记
 
 ## 边缘查询示例
 
 - Cloudflare Worker 和阿里云 ESA 的查询/代理脚本见 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`
 - 说明示例见 `docs/edge-search-examples.md`
+- JSON 索引与数据缓存 `1` 小时，Release 文件下载代理缓存 `30` 天
 
 ## 本地预览
 

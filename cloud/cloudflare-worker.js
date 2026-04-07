@@ -1,5 +1,6 @@
 const INDEX_BASE_URL = 'https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main';
 const CACHE_TTL_SECONDS = 3600;
+const RELEASE_FILE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SHARD_COUNT = 64;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 
@@ -7,8 +8,17 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    const releaseAssetMatch = url.pathname.match(/^\/component\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
+    if (releaseAssetMatch) {
+      return handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], ctx);
+    }
+
     if (url.pathname === '/search') {
       return handleSearch(request, ctx);
+    }
+
+    if (url.pathname === '/recent-updates') {
+      return handleRecentUpdates(ctx);
     }
 
     const componentMatch = url.pathname.match(/^\/component\/([^/]+)\/(description|author|readme|releases)$/);
@@ -71,6 +81,47 @@ async function handleComponentFile(id, kind, ctx) {
   return await fetchWithCache(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/${kind}.json`, ctx);
 }
 
+async function handleRecentUpdates(ctx) {
+  return await fetchWithCache(`${INDEX_BASE_URL}/indexes/recent-updates.json`, ctx);
+}
+
+async function handleReleaseAsset(request, id, version, fileName, ctx) {
+  const releasesDoc = await fetchJsonCached(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`, ctx);
+  const decodedVersion = decodeURIComponent(version);
+  const decodedFileName = decodeURIComponent(fileName);
+
+  const asset = findReleaseAsset(releasesDoc.releases || [], decodedVersion, decodedFileName);
+  if (!asset) {
+    return json({ ok: false, error: 'Release asset not found' }, 404, RELEASE_FILE_CACHE_TTL_SECONDS);
+  }
+
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, { method: 'GET' });
+  const cached = await cache.match(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const upstream = await fetch(asset.downloadUrl);
+  if (!upstream.ok) {
+    return json({ ok: false, error: 'Upstream download failed', status: upstream.status }, upstream.status, 60);
+  }
+
+  const response = new Response(upstream.body, upstream);
+  response.headers.set(
+    'cache-control',
+    `public, max-age=${RELEASE_FILE_CACHE_TTL_SECONDS}, s-maxage=${RELEASE_FILE_CACHE_TTL_SECONDS}`,
+  );
+
+  if (!response.headers.has('content-disposition')) {
+    response.headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(decodedFileName)}`);
+  }
+
+  ctx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
+}
+
 async function fetchJsonCached(url, ctx) {
   const response = await fetchWithCache(url, ctx);
   return response.json();
@@ -127,12 +178,28 @@ function intersectTokenMatches(tokens, shardMap) {
   return result ? [...result].sort() : [];
 }
 
-function json(data, status = 200) {
+function findReleaseAsset(releases, version, fileName) {
+  for (const release of releases) {
+    if (release.tagName !== version && release.name !== version) {
+      continue;
+    }
+
+    for (const asset of release.assets || []) {
+      if (asset.name === fileName) {
+        return asset;
+      }
+    }
+  }
+
+  return null;
+}
+
+function json(data, status = 200, ttlSeconds = CACHE_TTL_SECONDS) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_TTL_SECONDS}, s-maxage=${CACHE_TTL_SECONDS}`,
+      'cache-control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
     },
   });
 }

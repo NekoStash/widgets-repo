@@ -5,6 +5,7 @@
 - `indexes/search-manifest.json`
 - `indexes/search-shards/{00..3f}.json`
 - `indexes/component-summaries.json`
+- `indexes/recent-updates.json`
 - `data/{id}/description.json`
 - `data/{id}/author.json`
 - `data/{id}/readme.json`
@@ -12,12 +13,21 @@
 
 搜索接口只返回摘要信息：作者、组件 ID、组件名、描述。
 
+最近更新接口直接返回最近 `20` 个组件的摘要列表。
+
 详情接口按目录代理：
 
 - `/component/{id}/description`
 - `/component/{id}/author`
 - `/component/{id}/readme`
 - `/component/{id}/releases`
+- `/component/{id}/releases/{version}/{file}`
+- `/recent-updates`
+
+Release 文件下载代理会从 `data/{id}/releases.json` 找到对应资源的 `downloadUrl`，再由边缘节点代理下载。
+
+- 索引和 JSON 数据缓存 `1` 小时
+- Release 文件缓存 `30` 天
 
 ## Cloudflare Worker
 
