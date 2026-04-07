@@ -6,7 +6,7 @@ const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Scri
 
 export default {
   async fetch(request) {
-    return handleRequest(request);
+    return withRouteCache(request, () => handleRequest(request));
   },
 };
 
@@ -94,6 +94,66 @@ async function handleReleaseAsset(id, version, fileName) {
   }
 
   return proxied;
+}
+
+async function withRouteCache(request, producer) {
+  if (request.method !== 'GET') {
+    return producer();
+  }
+
+  const cacheApi = getEdgeCacheApi();
+  if (!cacheApi) {
+    return producer();
+  }
+
+  const cacheKey = buildEsaCacheKey(request.url);
+  const cached = await cacheApi.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const response = await producer();
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const ttlSeconds = getResponseTtl(response);
+  const cacheable = new Response(response.body, response);
+  cacheable.headers.set('cache-control', `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`);
+
+  try {
+    await cacheApi.put(cacheKey, cacheable.clone());
+  } catch {
+  }
+
+  return cacheable;
+}
+
+function getEdgeCacheApi() {
+  if (typeof cache === 'undefined') {
+    return null;
+  }
+
+  return cache;
+}
+
+function buildEsaCacheKey(inputUrl) {
+  const url = new URL(inputUrl);
+  url.protocol = 'http:';
+  return url.toString();
+}
+
+function getResponseTtl(response) {
+  const cacheControl = response.headers.get('cache-control') || '';
+  const match = cacheControl.match(/(?:s-maxage|max-age)=(\d+)/);
+
+  if (match) {
+    return Number.parseInt(match[1], 10);
+  }
+
+  return CACHE_TTL_SECONDS;
 }
 
 async function fetchJson(url) {

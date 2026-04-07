@@ -10,20 +10,24 @@ export default {
 
     const releaseAssetMatch = url.pathname.match(/^\/component\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
     if (releaseAssetMatch) {
-      return handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], ctx);
+      return withRouteCache(request, ctx, RELEASE_FILE_CACHE_TTL_SECONDS, () =>
+        handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], ctx),
+      );
     }
 
     if (url.pathname === '/search') {
-      return handleSearch(request, ctx);
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleSearch(request, ctx));
     }
 
     if (url.pathname === '/recent-updates') {
-      return handleRecentUpdates(ctx);
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(ctx));
     }
 
     const componentMatch = url.pathname.match(/^\/component\/([^/]+)\/(description|author|readme|releases)$/);
     if (componentMatch) {
-      return handleComponentFile(componentMatch[1], componentMatch[2], ctx);
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
+        handleComponentFile(componentMatch[1], componentMatch[2], ctx),
+      );
     }
 
     return json({msg: "REAREye RearStore Endpoint"});
@@ -70,29 +74,21 @@ async function handleSearch(request, ctx) {
 }
 
 async function handleComponentFile(id, kind, ctx) {
-  return await fetchWithCache(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/${kind}.json`, ctx);
+  return await fetchUpstreamJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/${kind}.json`);
 }
 
 async function handleRecentUpdates(ctx) {
-  return await fetchWithCache(`${INDEX_BASE_URL}/indexes/recent-updates.json`, ctx);
+  return await fetchUpstreamJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
 }
 
 async function handleReleaseAsset(request, id, version, fileName, ctx) {
-  const releasesDoc = await fetchJsonCached(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`, ctx);
+  const releasesDoc = await fetchJsonCached(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`);
   const decodedVersion = decodeURIComponent(version);
   const decodedFileName = decodeURIComponent(fileName);
 
   const asset = findReleaseAsset(releasesDoc.releases || [], decodedVersion, decodedFileName);
   if (!asset) {
     return json({ ok: false, error: 'Release asset not found' }, 404, RELEASE_FILE_CACHE_TTL_SECONDS);
-  }
-
-  const cache = caches.default;
-  const cacheKey = new Request(request.url, { method: 'GET' });
-  const cached = await cache.match(cacheKey);
-
-  if (cached) {
-    return cached;
   }
 
   const upstream = await fetch(asset.downloadUrl);
@@ -110,24 +106,40 @@ async function handleReleaseAsset(request, id, version, fileName, ctx) {
     response.headers.set('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(decodedFileName)}`);
   }
 
-  ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
 }
 
-async function fetchJsonCached(url, ctx) {
-  const response = await fetchWithCache(url, ctx);
-  return response.json();
-}
+async function withRouteCache(request, ctx, ttlSeconds, producer) {
+  if (request.method !== 'GET') {
+    return producer();
+  }
 
-async function fetchWithCache(url, ctx) {
   const cache = caches.default;
-  const cacheKey = new Request(url, { method: 'GET' });
+  const cacheKey = new Request(request.url, { method: 'GET' });
   const cached = await cache.match(cacheKey);
 
   if (cached) {
     return cached;
   }
 
+  const response = await producer();
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const cacheable = new Response(response.body, response);
+  cacheable.headers.set('cache-control', `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`);
+  ctx.waitUntil(cache.put(cacheKey, cacheable.clone()));
+  return cacheable;
+}
+
+async function fetchJsonCached(url, ctx) {
+  const response = await fetchUpstreamJson(url);
+  return response.json();
+}
+
+async function fetchUpstreamJson(url) {
   const upstream = await fetch(url, {
     headers: {
       accept: 'application/json',
@@ -139,9 +151,7 @@ async function fetchWithCache(url, ctx) {
   }
 
   const response = new Response(upstream.body, upstream);
-  response.headers.set('cache-control', `public, max-age=${CACHE_TTL_SECONDS}, s-maxage=${CACHE_TTL_SECONDS}`);
   response.headers.set('content-type', 'application/json; charset=utf-8');
-  ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
 }
 

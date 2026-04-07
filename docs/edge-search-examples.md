@@ -1,6 +1,11 @@
 # Edge Search Examples
 
-可部署脚本在 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`。下面的示例同时适用于你现在的索引结构：
+可部署脚本在 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`。两个脚本现在都显式使用 Cache API 将路由响应缓存到边缘节点。
+
+- Cloudflare 使用 `caches.default.match/put`，并使用当前 Worker 路由 URL 作为缓存键
+- ESA 使用官方文档里的全局 `cache.get/put`，并按文档要求把缓存键改成 `http://` URL
+
+下面的示例同时适用于你现在的索引结构：
 
 - `indexes/search-manifest.json`
 - `indexes/search-shards/{00..3f}.json`
