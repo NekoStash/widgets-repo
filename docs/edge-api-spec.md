@@ -98,6 +98,33 @@
 }
 ```
 
+### `GET /widget/{id}/widget-info`
+
+```json
+{
+  "id": "music",
+  "widgetInfo": {
+    "name": "音乐歌词",
+    "business_setup": {
+      "id": "music",
+      "renameable": false
+    }
+  }
+}
+```
+
+```json
+{
+  "widgetInfo": {
+    "name": "string",
+    "business_setup": {
+      "id": "string",
+      "renameable": "boolean"
+    }
+  }
+}
+```
+
 ### `GET /widget/{id}/readme`
 
 ```json

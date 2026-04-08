@@ -558,6 +558,13 @@ function buildComponentFiles(component) {
       }),
     ],
     [
+      `${basePath}/widget-info.json`,
+      toJson({
+        id: component.id,
+        widgetInfo: component.widgetInfo,
+      }),
+    ],
+    [
       `${basePath}/readme.json`,
       toJson({
         id: component.id,
@@ -646,6 +653,7 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
       avatarUrl: authorProfile.avatar_url,
       type: authorProfile.type,
     },
+    widgetInfo,
     readme,
     releases: releases.map(mapRelease),
     readmeSearchLimit,

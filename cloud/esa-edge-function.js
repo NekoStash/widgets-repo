@@ -26,7 +26,7 @@ async function handleRequest(request) {
     return proxyJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
   }
 
-  const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|readme|releases)$/);
+  const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|widget-info|readme|releases)$/);
   if (widgetMatch) {
     return proxyJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(widgetMatch[1])}/${widgetMatch[2]}.json`);
   }

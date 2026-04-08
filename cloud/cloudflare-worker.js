@@ -23,7 +23,7 @@ export default {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(ctx));
     }
 
-    const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|readme|releases)$/);
+    const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|widget-info|readme|releases)$/);
     if (widgetMatch) {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
         handleWidgetFile(widgetMatch[1], widgetMatch[2], ctx),

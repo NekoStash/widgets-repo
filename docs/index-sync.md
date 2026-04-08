@@ -17,6 +17,7 @@
 
 - `data/{componentId}/description.json`
 - `data/{componentId}/author.json`
+- `data/{componentId}/widget-info.json`
 - `data/{componentId}/readme.json`
 - `data/{componentId}/releases.json`
 - `indexes/component-summaries.json`
@@ -27,6 +28,7 @@
 ## 搜索索引说明
 
 - 搜索内容包含组件 ID、`widget_info.json` 中的组件名、仓库名、仓库描述、作者名、作者 login 和 README 文本
+- `data/{componentId}/widget-info.json` 会完整保留源仓库根目录 `widget_info.json` 的原始结构
 - README 只截取前 `20000` 个字符参与搜索建索引，避免索引过大
 - 索引按 `fnv1a32(token) % 64` 分片，适合客户端或边缘环境按查询 token 只拉取所需 shard
 - 搜索结果摘要可以直接使用 `indexes/component-summaries.json`，无需额外读取 README 或 Releases
