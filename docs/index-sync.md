@@ -43,6 +43,9 @@
 - 精简版边缘 API 文档见 `docs/edge-api-spec.md`
 - JSON 索引与数据缓存 `1` 小时，Release 文件下载代理缓存 `30` 天
 - Cloudflare 使用 `caches.default` 缓存当前路由响应，ESA 使用官方全局 `cache.get/put` 缓存当前路由响应
+- ESA 脚本支持通过 `GITHUB_PROXY_PREFIX` 给 GitHub 系 URL 添加前缀，例如 `https://ghproxy.example.com/`
+- ESA 脚本支持通过 `GITHUB_HOST_OVERRIDE` 将 `github.com` 替换成自定义域名；设置后会优先于 `GITHUB_PROXY_PREFIX`
+- ESA 脚本支持通过 `RELEASE_ASSET_HOST` 改写 Release 下载重定向后的 `release-assets.githubusercontent.com`，默认保持原域名
 
 ## 本地预览
 

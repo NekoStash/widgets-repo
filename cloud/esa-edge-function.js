@@ -1,8 +1,19 @@
 const INDEX_BASE_URL = 'https://raw.githubusercontent.com/NekoStash/widgets-index/main';
+const GITHUB_PROXY_PREFIX = '';
+const GITHUB_HOST_OVERRIDE = '';
+const RELEASE_ASSET_HOST = 'release-assets.githubusercontent.com';
 const CACHE_TTL_SECONDS = 3600;
 const RELEASE_FILE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const MAX_RELEASE_REDIRECTS = 5;
 const SHARD_COUNT = 64;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const GITHUB_HOSTS = new Set([
+  'github.com',
+  'raw.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'avatars.githubusercontent.com',
+]);
 
 export default {
   async fetch(request) {
@@ -81,7 +92,7 @@ async function handleReleaseAsset(id, version, fileName) {
     return json({ ok: false, error: 'Release asset not found' }, 404, CACHE_TTL_SECONDS);
   }
 
-  const response = await fetch(asset.downloadUrl);
+  const response = await fetchReleaseAsset(prepareGitHubRequestUrl(asset.downloadUrl));
   if (!response.ok) {
     return json({ ok: false, error: 'Upstream download failed', status: response.status }, response.status, 60);
   }
@@ -107,7 +118,7 @@ async function withRouteCache(request, producer) {
   }
 
   const cacheKey = buildEsaCacheKey(request.url);
-  const cached = await cacheApi.get(cacheKey);
+  const cached = await safeCacheGet(cacheApi, cacheKey);
 
   if (cached) {
     return cached;
@@ -123,12 +134,24 @@ async function withRouteCache(request, producer) {
   const cacheable = new Response(response.body, response);
   cacheable.headers.set('cache-control', `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`);
 
-  try {
-    await cacheApi.put(cacheKey, cacheable.clone());
-  } catch {
-  }
+  await safeCachePut(cacheApi, cacheKey, cacheable.clone());
 
   return cacheable;
+}
+
+async function safeCacheGet(cacheApi, cacheKey) {
+  try {
+    return await cacheApi.get(cacheKey);
+  } catch {
+    return null;
+  }
+}
+
+async function safeCachePut(cacheApi, cacheKey, response) {
+  try {
+    await cacheApi.put(cacheKey, response);
+  } catch {
+  }
 }
 
 function getEdgeCacheApi() {
@@ -156,8 +179,151 @@ function getResponseTtl(response) {
   return CACHE_TTL_SECONDS;
 }
 
+function withGitHubProxy(inputUrl) {
+  const proxyPrefix = normalizeProxyPrefix(GITHUB_PROXY_PREFIX);
+
+  if (!proxyPrefix) {
+    return inputUrl;
+  }
+
+  if (inputUrl.startsWith(proxyPrefix)) {
+    return inputUrl;
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(inputUrl);
+  } catch {
+    return inputUrl;
+  }
+
+  if (!GITHUB_HOSTS.has(parsedUrl.hostname)) {
+    return inputUrl;
+  }
+
+  return `${proxyPrefix}${inputUrl}`;
+}
+
+function prepareGitHubRequestUrl(inputUrl) {
+  const rewrittenUrl = rewriteGitHubHost(inputUrl);
+
+  if (hasGitHubHostOverride()) {
+    return rewrittenUrl;
+  }
+
+  return withGitHubProxy(rewrittenUrl);
+}
+
+function rewriteGitHubHost(inputUrl) {
+  const override = normalizeGitHubHostOverride(GITHUB_HOST_OVERRIDE);
+
+  if (!override) {
+    return inputUrl;
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(inputUrl);
+  } catch {
+    return inputUrl;
+  }
+
+  if (parsedUrl.hostname !== 'github.com') {
+    return inputUrl;
+  }
+
+  parsedUrl.protocol = override.protocol;
+  parsedUrl.host = override.host;
+  return parsedUrl.toString();
+}
+
+function hasGitHubHostOverride() {
+  return Boolean(normalizeGitHubHostOverride(GITHUB_HOST_OVERRIDE));
+}
+
+function normalizeGitHubHostOverride(value) {
+  const normalized = `${value || ''}`.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const url = normalized.includes('://') ? new URL(normalized) : new URL(`https://${normalized}`);
+    return {
+      protocol: url.protocol,
+      host: url.host,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeProxyPrefix(prefix) {
+  const normalized = `${prefix || ''}`.trim();
+
+  if (!normalized) {
+    return '';
+  }
+
+  return normalized.endsWith('/') ? normalized : `${normalized}/`;
+}
+
+async function fetchReleaseAsset(initialUrl) {
+  let currentUrl = initialUrl;
+
+  for (let redirectCount = 0; redirectCount <= MAX_RELEASE_REDIRECTS; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      redirect: 'manual',
+    });
+
+    if (!isRedirectResponse(response.status)) {
+      return response;
+    }
+
+    const location = response.headers.get('location');
+    if (!location) {
+      return response;
+    }
+
+    const resolvedLocation = new URL(location, currentUrl).toString();
+    currentUrl = prepareGitHubRequestUrl(rewriteReleaseAssetHost(resolvedLocation));
+  }
+
+  throw new Error(`Too many redirects while fetching release asset: ${initialUrl}`);
+}
+
+function isRedirectResponse(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function rewriteReleaseAssetHost(inputUrl) {
+  const targetHost = `${RELEASE_ASSET_HOST || ''}`.trim();
+
+  if (!targetHost || targetHost === 'release-assets.githubusercontent.com') {
+    return inputUrl;
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(inputUrl);
+  } catch {
+    return inputUrl;
+  }
+
+  if (parsedUrl.hostname !== 'release-assets.githubusercontent.com') {
+    return inputUrl;
+  }
+
+  parsedUrl.host = targetHost;
+  return parsedUrl.toString();
+}
+
 async function fetchJson(url) {
-  const response = await fetch(url, {
+  const response = await fetch(prepareGitHubRequestUrl(url), {
     headers: {
       accept: 'application/json',
     },
@@ -171,7 +337,7 @@ async function fetchJson(url) {
 }
 
 async function proxyJson(url) {
-  const response = await fetch(url, {
+  const response = await fetch(prepareGitHubRequestUrl(url), {
     headers: {
       accept: 'application/json',
     },
