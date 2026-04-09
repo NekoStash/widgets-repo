@@ -1,4 +1,4 @@
-const INDEX_BASE_URL = 'https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main';
+const DEFAULT_INDEX_BASE_URL = 'https://raw.githubusercontent.com/NekoStash/widgets-index/main';
 const CACHE_TTL_SECONDS = 3600;
 const RELEASE_FILE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SHARD_COUNT = 64;
@@ -6,27 +6,28 @@ const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Scri
 
 export default {
   async fetch(request, env, ctx) {
+    const indexBaseUrl = (env && env.INDEX_BASE_URL) || DEFAULT_INDEX_BASE_URL;
     const url = new URL(request.url);
 
     const releaseAssetMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
     if (releaseAssetMatch) {
       return withRouteCache(request, ctx, RELEASE_FILE_CACHE_TTL_SECONDS, () =>
-        handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], ctx),
+        handleReleaseAsset(request, releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3], indexBaseUrl),
       );
     }
 
     if (url.pathname === '/search') {
-      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleSearch(request, ctx));
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleSearch(request, indexBaseUrl));
     }
 
     if (url.pathname === '/recent-updates') {
-      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(ctx));
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(indexBaseUrl));
     }
 
     const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|widget-info|readme|releases)$/);
     if (widgetMatch) {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
-        handleWidgetFile(widgetMatch[1], widgetMatch[2], ctx),
+        handleWidgetFile(widgetMatch[1], widgetMatch[2], indexBaseUrl),
       );
     }
 
@@ -34,7 +35,7 @@ export default {
   },
 };
 
-async function handleSearch(request, ctx) {
+async function handleSearch(request, indexBaseUrl) {
   const url = new URL(request.url);
   const query = (url.searchParams.get('q') || '').trim();
   const limit = clampInt(url.searchParams.get('limit'), 1, 50, 10);
@@ -47,8 +48,8 @@ async function handleSearch(request, ctx) {
   const shardNames = [...new Set(tokens.map(getShardName))];
 
   const [summaryIndex, ...shards] = await Promise.all([
-    fetchJsonCached(`${INDEX_BASE_URL}/indexes/component-summaries.json`, ctx),
-    ...shardNames.map((shard) => fetchJsonCached(`${INDEX_BASE_URL}/indexes/search-shards/${shard}.json`, ctx)),
+    fetchJsonCached(`${indexBaseUrl}/indexes/component-summaries.json`),
+    ...shardNames.map((shard) => fetchJsonCached(`${indexBaseUrl}/indexes/search-shards/${shard}.json`)),
   ]);
 
   const shardMap = new Map(shards.map((doc) => [doc.shard, doc.tokens || {}]));
@@ -73,16 +74,16 @@ async function handleSearch(request, ctx) {
   });
 }
 
-async function handleWidgetFile(id, kind, ctx) {
-  return await fetchUpstreamJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/${kind}.json`);
+async function handleWidgetFile(id, kind, indexBaseUrl) {
+  return await fetchUpstreamJson(`${indexBaseUrl}/data/${encodeURIComponent(id)}/${kind}.json`);
 }
 
-async function handleRecentUpdates(ctx) {
-  return await fetchUpstreamJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
+async function handleRecentUpdates(indexBaseUrl) {
+  return await fetchUpstreamJson(`${indexBaseUrl}/indexes/recent-updates.json`);
 }
 
-async function handleReleaseAsset(request, id, version, fileName, ctx) {
-  const releasesDoc = await fetchJsonCached(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`);
+async function handleReleaseAsset(request, id, version, fileName, indexBaseUrl) {
+  const releasesDoc = await fetchJsonCached(`${indexBaseUrl}/data/${encodeURIComponent(id)}/releases.json`);
   const decodedVersion = decodeURIComponent(version);
   const decodedFileName = decodeURIComponent(fileName);
 
@@ -134,7 +135,7 @@ async function withRouteCache(request, ctx, ttlSeconds, producer) {
   return cacheable;
 }
 
-async function fetchJsonCached(url, ctx) {
+async function fetchJsonCached(url) {
   const response = await fetchUpstreamJson(url);
   return response.json();
 }

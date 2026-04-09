@@ -37,7 +37,7 @@ Release 文件下载代理会从 `data/{id}/releases.json` 找到对应资源的
 ## Cloudflare Worker
 
 ```js
-const INDEX_BASE_URL = "https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main";
+const INDEX_BASE_URL = "https://raw.githubusercontent.com/NekoStash/widgets-index/main";
 const SHARD_COUNT = 64;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 
@@ -245,7 +245,7 @@ function getShardName(token) {
 如果 ESA 控制台模板支持 `export default { fetch() {} }`，直接使用下面代码；如果控制台给的是 `addEventListener('fetch', ...)` 风格，把 `handleRequest` 包进去即可。
 
 ```js
-const INDEX_BASE_URL = "https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main";
+const INDEX_BASE_URL = "https://raw.githubusercontent.com/NekoStash/widgets-index/main";
 const SHARD_COUNT = 64;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 

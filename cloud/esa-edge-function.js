@@ -1,4 +1,4 @@
-const INDEX_BASE_URL = 'https://cdn.jsdelivr.net/gh/NekoStash/widgets-index@main';
+const INDEX_BASE_URL = 'https://raw.githubusercontent.com/NekoStash/widgets-index/main';
 const CACHE_TTL_SECONDS = 3600;
 const RELEASE_FILE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SHARD_COUNT = 64;
