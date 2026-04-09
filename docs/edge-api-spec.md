@@ -137,7 +137,7 @@
     "size": 2048,
     "htmlUrl": "https://github.com/SiberiaApp/Xiaomi-RearScreen-Music/blob/main/README.md",
     "downloadUrl": "https://raw.githubusercontent.com/SiberiaApp/Xiaomi-RearScreen-Music/main/README.md",
-    "content": "# 音乐歌词\n\n这是组件说明..."
+    "content": "<h1 dir=\"auto\">音乐歌词</h1>\n<p dir=\"auto\">这是组件说明...</p>"
   }
 }
 ```
@@ -157,7 +157,7 @@
       "createdAt": "2026-04-01T10:00:00Z",
       "publishedAt": "2026-04-01T10:10:00Z",
       "url": "https://github.com/SiberiaApp/Xiaomi-RearScreen-Music/releases/tag/v1.0.0",
-      "body": "初始发布版本",
+      "body": "<p dir=\"auto\">初始发布版本</p>",
       "assets": [
         {
           "id": 987654,

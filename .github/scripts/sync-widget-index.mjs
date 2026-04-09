@@ -7,7 +7,9 @@ const MANAGED_PREFIXES = ['data/', 'indexes/'];
 const RELEASES_PER_PAGE = 100;
 const DEFAULT_SEARCH_SHARD_COUNT = 64;
 const DEFAULT_README_SEARCH_LIMIT = 20000;
+const MARKDOWN_RENDER_CONCURRENCY = 4;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const markdownRenderCache = new Map();
 
 function normalizeRepoUrl(url) {
   return url.trim().replace(/\.git$/i, '').replace(/\/+$/, '');
@@ -174,6 +176,89 @@ async function requestJson(method, requestPath, token, body) {
   return data;
 }
 
+async function requestText(method, requestPath, token, body, accept = 'text/html') {
+  const headers = {
+    Accept: accept,
+    'Content-Type': 'application/json',
+    'User-Agent': 'widgets-index-sync',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`https://api.github.com${requestPath}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    const error = new Error(`GitHub API request failed: ${method} ${requestPath}`);
+    error.status = response.status;
+
+    try {
+      error.data = text ? JSON.parse(text) : null;
+    } catch {
+      error.data = text;
+    }
+
+    throw error;
+  }
+
+  return text;
+}
+
+async function renderMarkdown(token, text, context) {
+  if (!text) {
+    return '';
+  }
+
+  const cacheKey = `${context}\u0000${text}`;
+  const cached = markdownRenderCache.get(cacheKey);
+
+  if (cached) {
+    return await cached;
+  }
+
+  const pending = requestText('POST', '/markdown', token, {
+    text,
+    mode: 'gfm',
+    context,
+  });
+
+  markdownRenderCache.set(cacheKey, pending);
+
+  return await pending;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+
+  return results;
+}
+
 async function getRepository(token, owner, repo) {
   return await requestJson('GET', `/repos/${owner}/${repo}`, token);
 }
@@ -299,7 +384,7 @@ function mapRelease(release) {
   };
 }
 
-function buildSearchSource({ id, repository, author, readme, readmeSearchLimit }) {
+function buildSearchSource({ id, repository, author, readmeSearchContent, readmeSearchLimit }) {
   const searchParts = [
     id,
     repository.widgetName || '',
@@ -310,8 +395,8 @@ function buildSearchSource({ id, repository, author, readme, readmeSearchLimit }
     author.name || '',
   ];
 
-  if (readme?.content) {
-    searchParts.push(stripMarkdown(readme.content).slice(0, readmeSearchLimit));
+  if (readmeSearchContent) {
+    searchParts.push(stripMarkdown(readmeSearchContent).slice(0, readmeSearchLimit));
   }
 
   return searchParts.filter(Boolean).join('\n');
@@ -450,7 +535,7 @@ function buildSearchFiles(components, shardCount, readmeSearchLimit, sourceRepo)
         id: component.id,
         repository: component.repository,
         author: component.author,
-        readme: component.readme,
+        readmeSearchContent: component.readmeSearchContent,
         readmeSearchLimit,
       }),
     );
@@ -623,6 +708,22 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
     widgetInfo && typeof widgetInfo === 'object' && typeof widgetInfo.name === 'string' && widgetInfo.name.trim()
       ? widgetInfo.name.trim()
       : repository.name;
+  const repositoryContext = repository.full_name;
+  const readmeSearchContent = readme?.content || '';
+  const renderedReadme = readme
+    ? {
+        ...readme,
+        content: await renderMarkdown(publicToken, readme.content, repositoryContext),
+      }
+    : null;
+  const renderedReleases = await mapWithConcurrency(
+    releases,
+    MARKDOWN_RENDER_CONCURRENCY,
+    async (release) => ({
+      ...mapRelease(release),
+      body: await renderMarkdown(publicToken, release.body || '', repositoryContext),
+    }),
+  );
 
   return {
     id: metadata.id,
@@ -654,8 +755,9 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
       type: authorProfile.type,
     },
     widgetInfo,
-    readme,
-    releases: releases.map(mapRelease),
+    readmeSearchContent,
+    readme: renderedReadme,
+    releases: renderedReleases,
     readmeSearchLimit,
   };
 }
