@@ -55,6 +55,23 @@
 }
 ```
 
+### `GET /widgets`
+
+```json
+[
+  {
+    "id": "music",
+    "name": "音乐歌词",
+    "authorName": "SiberiaApp",
+    "authorId": "SiberiaApp",
+    "description": "A music player compatible with the Xiaomi RearScreen series. 适用于小米背屏系列的音乐播放器。",
+    "latestReleaseTag": "v1.0.0",
+    "latestReleasePublishedAt": "2026-04-01T10:10:00.000Z",
+    "stars": 2
+  }
+]
+```
+
 ### `GET /widget/{id}/description`
 
 ```json

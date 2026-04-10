@@ -37,6 +37,10 @@ async function handleRequest(request) {
     return proxyJson(`${INDEX_BASE_URL}/indexes/recent-updates.json`);
   }
 
+  if (url.pathname === '/widgets') {
+    return proxyJson(`${INDEX_BASE_URL}/indexes/widgets.json`);
+  }
+
   const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|widget-info|readme|releases)$/);
   if (widgetMatch) {
     return proxyJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(widgetMatch[1])}/${widgetMatch[2]}.json`);

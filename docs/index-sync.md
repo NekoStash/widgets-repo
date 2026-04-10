@@ -22,6 +22,7 @@
 - `data/{componentId}/releases.json`
 - `indexes/component-summaries.json`
 - `indexes/recent-updates.json`
+- `indexes/widgets.json`
 - `indexes/search-manifest.json`
 - `indexes/search-shards/{00..3f}.json`
 

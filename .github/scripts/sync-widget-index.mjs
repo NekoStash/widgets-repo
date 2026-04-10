@@ -431,7 +431,33 @@ function buildSummaryFiles(components, sourceRepo) {
   ]);
 }
 
-function getLatestReleaseTimestamp(releases = []) {
+function buildWidgetsFile(components) {
+  const widgets = components
+    .slice()
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((component) => {
+      const latestRelease = getLatestRelease(component.releases);
+      const latestReleaseTimestamp = getLatestReleaseTimestamp(component.releases);
+
+      return {
+        id: component.id,
+        name: component.repository.widgetName,
+        authorName: component.author.name,
+        authorId: component.author.login,
+        description: component.repository.description || '',
+        latestReleaseTag: latestRelease ? latestRelease.tagName : null,
+        latestReleasePublishedAt:
+          latestReleaseTimestamp === null ? null : new Date(latestReleaseTimestamp).toISOString(),
+        stars: component.repository.stargazersCount,
+      };
+    });
+
+  return new Map([
+    ['indexes/widgets.json', toJson(widgets)],
+  ]);
+}
+
+function getLatestRelease(releases = []) {
   let latest = null;
 
   for (const release of releases) {
@@ -445,13 +471,37 @@ function getLatestReleaseTimestamp(releases = []) {
         continue;
       }
 
-      if (latest === null || timestamp > latest) {
-        latest = timestamp;
+      if (latest === null || timestamp > latest.timestamp) {
+        latest = {
+          release,
+          timestamp,
+        };
       }
     }
   }
 
-  return latest;
+  return latest ? latest.release : null;
+}
+
+function getLatestReleaseTimestamp(releases = []) {
+  const latestRelease = getLatestRelease(releases);
+
+  if (!latestRelease) {
+    return null;
+  }
+
+  for (const value of [latestRelease.publishedAt, latestRelease.createdAt]) {
+    if (!value) {
+      continue;
+    }
+
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp)) {
+      return timestamp;
+    }
+  }
+
+  return null;
 }
 
 function getComponentUpdatedTimestamp(component) {
@@ -785,6 +835,10 @@ function buildDesiredFiles(components, sourceRepo, shardCount, readmeSearchLimit
   }
 
   for (const [filePath, content] of buildRecentUpdatesFiles(components, sourceRepo)) {
+    files.set(filePath, content);
+  }
+
+  for (const [filePath, content] of buildWidgetsFile(components)) {
     files.set(filePath, content);
   }
 

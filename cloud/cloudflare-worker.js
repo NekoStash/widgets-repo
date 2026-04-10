@@ -24,6 +24,10 @@ export default {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleRecentUpdates(indexBaseUrl));
     }
 
+    if (url.pathname === '/widgets') {
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () => handleWidgets(indexBaseUrl));
+    }
+
     const widgetMatch = url.pathname.match(/^\/widget\/([^/]+)\/(description|author|widget-info|readme|releases)$/);
     if (widgetMatch) {
       return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
@@ -80,6 +84,10 @@ async function handleWidgetFile(id, kind, indexBaseUrl) {
 
 async function handleRecentUpdates(indexBaseUrl) {
   return await fetchUpstreamJson(`${indexBaseUrl}/indexes/recent-updates.json`);
+}
+
+async function handleWidgets(indexBaseUrl) {
+  return await fetchUpstreamJson(`${indexBaseUrl}/indexes/widgets.json`);
 }
 
 async function handleReleaseAsset(request, id, version, fileName, indexBaseUrl) {
