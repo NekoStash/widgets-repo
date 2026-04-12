@@ -696,6 +696,7 @@ function buildComponentFiles(component) {
       `${basePath}/widget-info.json`,
       toJson({
         id: component.id,
+        type: component.type,
         widgetInfo: component.widgetInfo,
       }),
     ],
@@ -792,6 +793,7 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
 
   return {
     id: metadata.id,
+    type: typeof metadata.type === 'string' && metadata.type.trim() ? metadata.type.trim() : undefined,
     sourceMetadataPath: metadataPath,
     repository: {
       widgetName,
