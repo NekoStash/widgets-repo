@@ -716,6 +716,21 @@ function buildComponentFiles(component) {
   ]);
 }
 
+function normalizeWidgetInfo(widgetInfo) {
+  if (!widgetInfo || typeof widgetInfo !== 'object' || Array.isArray(widgetInfo)) {
+    return widgetInfo;
+  }
+
+  if (typeof widgetInfo.type === 'string' && widgetInfo.type.trim()) {
+    return widgetInfo;
+  }
+
+  return {
+    ...widgetInfo,
+    type: 'widget',
+  };
+}
+
 async function loadMetadata(sourceToken, sourceRepo, metadataPath) {
   const metadataFile = await getContents(sourceToken, sourceRepo.owner, sourceRepo.repo, metadataPath);
 
@@ -804,7 +819,7 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
       avatarUrl: authorProfile.avatar_url,
       type: authorProfile.type,
     },
-    widgetInfo,
+    widgetInfo: normalizeWidgetInfo(widgetInfo),
     readmeSearchContent,
     readme: renderedReadme,
     releases: renderedReleases,

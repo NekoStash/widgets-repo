@@ -26,20 +26,21 @@
 - `indexes/search-manifest.json`
 - `indexes/search-shards/{00..3f}.json`
 
-## 搜索索引说明
+## 索引说明
 
 - 搜索内容包含组件 ID、`widget_info.json` 中的组件名、仓库名、仓库描述、作者名、作者 login 和 README 文本
-- `data/{componentId}/widget-info.json` 会完整保留源仓库根目录 `widget_info.json` 的原始结构
+- `data/{componentId}/widget-info.json` 会保留源仓库根目录 `widget_info.json` 的结构，并在缺失时补齐 `widgetInfo.type: widget`
+- 这意味着 `widget_info.json` 里的可选 `business_setup` 以及 `wallpaper` 相关字段都会原样同步，只有 `type` 会被默认补齐
 - `data/{componentId}/readme.json` 和 `data/{componentId}/releases.json` 中的 Markdown 内容会预渲染成 HTML 后再存储
 - README 只截取前 `20000` 个字符参与搜索建索引，避免索引过大
 - 索引按 `fnv1a32(token) % 64` 分片，适合客户端或边缘环境按查询 token 只拉取所需 shard
 - 搜索结果摘要可以直接使用 `indexes/component-summaries.json`，无需额外读取 README 或 Releases
 - 最近更新列表可以直接使用 `indexes/recent-updates.json`，按最近更新时间返回最多 `20` 个组件
-- 为了避免定时任务产生无意义提交，产物不包含 `indexedAt` 或 `generatedAt` 这类运行时戳记
+- 为了避免定时任务产生无意义提交，产物里不包含 `indexedAt` 或 `generatedAt` 这类运行时戳记
 
 ## 边缘查询示例
 
-- Cloudflare Worker 和阿里云 ESA 的查询/代理脚本见 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`
+- Cloudflare Worker 和阿里云 ESA 的查询代理脚本见 `cloud/cloudflare-worker.js` 和 `cloud/esa-edge-function.js`
 - 说明示例见 `docs/edge-search-examples.md`
 - 精简版边缘 API 文档见 `docs/edge-api-spec.md`
 - JSON 索引与数据缓存 `1` 小时，Release 文件下载代理缓存 `30` 天

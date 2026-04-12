@@ -122,6 +122,7 @@
   "id": "music",
   "widgetInfo": {
     "name": "音乐歌词",
+    "type": "widget",
     "business_setup": {
       "id": "music",
       "renameable": false
@@ -134,6 +135,7 @@
 {
   "widgetInfo": {
     "name": "string",
+    "type": "widget",
     "business_setup": {
       "id": "string",
       "renameable": "boolean"
@@ -141,6 +143,10 @@
   }
 }
 ```
+
+- `business_setup` is optional.
+- `widgetInfo.type` defaults to `widget` when the source `widget_info.json` omits it.
+- `widgetInfo.type` may also be `wallpaper` when the source widget supports wallpaper metadata.
 
 ### `GET /widget/{id}/readme`
 
