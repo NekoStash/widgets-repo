@@ -60,3 +60,15 @@ $env:PUBLIC_GITHUB_TOKEN=''
 $env:LOCAL_OUTPUT_DIR='.preview-index'
 node ".github/scripts/sync-widget-index.mjs"
 ```
+
+## 本地模拟边缘服务
+
+先生成本地索引（见上面的本地预览），再启动模拟服务：
+
+```powershell
+node "cloud/local-edge-server.mjs" --index-dir ".preview-index" --port 8787
+```
+
+- 默认使用 `cloud/cloudflare-worker.js` 路由逻辑
+- 启动后可直接访问 `http://127.0.0.1:8787/search?q=music`
+- 如需模拟 ESA 脚本，可改成 `--runtime esa`
