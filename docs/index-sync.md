@@ -29,8 +29,9 @@
 ## 索引说明
 
 - 搜索内容包含组件 ID、`widget_info.json` 中的组件名、仓库名、仓库描述、作者名、作者 login 和 README 文本
-- `data/{componentId}/widget-info.json` 会保留源仓库根目录 `widget_info.json` 的结构，并在缺失时补齐 `widgetInfo.type: widget`
+- `data/{componentId}/widget-info.json` 会保留源仓库默认分支根目录 `widget_info.json` 的结构，并在缺失时补齐 `widgetInfo.type: widget`
 - 这意味着 `widget_info.json` 里的可选 `business_setup` 以及 `wallpaper` 相关字段都会原样同步，只有 `type` 会被默认补齐
+- `data/{componentId}/releases.json` 中每个 Release 会额外包含该 `tagName` 对应 ref 下的 `widgetInfo`；旧 `widget-info.json` 继续表示默认分支的最新仓库版本
 - `data/{componentId}/readme.json` 和 `data/{componentId}/releases.json` 中的 Markdown 内容会预渲染成 HTML 后再存储
 - README 只截取前 `20000` 个字符参与搜索建索引，避免索引过大
 - 索引按 `fnv1a32(token) % 64` 分片，适合客户端或边缘环境按查询 token 只拉取所需 shard

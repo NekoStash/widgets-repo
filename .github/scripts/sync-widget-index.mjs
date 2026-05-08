@@ -267,13 +267,14 @@ async function getUser(token, login) {
   return await requestJson('GET', `/users/${encodeURIComponent(login)}`, token);
 }
 
-async function getContents(token, owner, repo, filePath) {
-  return await requestJson('GET', `/repos/${owner}/${repo}/contents/${encodePath(filePath)}`, token);
+async function getContents(token, owner, repo, filePath, ref) {
+  const refQuery = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+  return await requestJson('GET', `/repos/${owner}/${repo}/contents/${encodePath(filePath)}${refQuery}`, token);
 }
 
-async function getOptionalJsonFile(token, owner, repo, filePath) {
+async function getOptionalJsonFile(token, owner, repo, filePath, ref) {
   try {
-    const file = await getContents(token, owner, repo, filePath);
+    const file = await getContents(token, owner, repo, filePath, ref);
 
     if (Array.isArray(file)) {
       throw new Error(`Unexpected directory response for ${owner}/${repo}/${filePath}.`);
@@ -785,10 +786,18 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
   const renderedReleases = await mapWithConcurrency(
     releases,
     MARKDOWN_RENDER_CONCURRENCY,
-    async (release) => ({
-      ...mapRelease(release),
-      body: await renderMarkdown(publicToken, release.body || '', repositoryContext),
-    }),
+    async (release) => {
+      const [renderedBody, releaseWidgetInfo] = await Promise.all([
+        renderMarkdown(publicToken, release.body || '', repositoryContext),
+        getOptionalJsonFile(publicToken, parsedRepo.owner, parsedRepo.repo, 'widget_info.json', release.tag_name),
+      ]);
+
+      return {
+        ...mapRelease(release),
+        body: renderedBody,
+        widgetInfo: normalizeWidgetInfo(releaseWidgetInfo),
+      };
+    },
   );
 
   return {

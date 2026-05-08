@@ -24,6 +24,11 @@ export default {
 async function handleRequest(request) {
   const url = new URL(request.url);
 
+  const releaseWidgetInfoMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/widget-info$/);
+  if (releaseWidgetInfoMatch) {
+    return handleReleaseWidgetInfo(releaseWidgetInfoMatch[1], releaseWidgetInfoMatch[2]);
+  }
+
   const releaseAssetMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
   if (releaseAssetMatch) {
     return handleReleaseAsset(releaseAssetMatch[1], releaseAssetMatch[2], releaseAssetMatch[3]);
@@ -83,6 +88,22 @@ async function handleSearch(url) {
     tokens,
     total: items.length,
     items,
+  });
+}
+
+async function handleReleaseWidgetInfo(id, version) {
+  const releasesDoc = await fetchJson(`${INDEX_BASE_URL}/data/${encodeURIComponent(id)}/releases.json`);
+  const release = findRelease(releasesDoc.releases || [], decodeURIComponent(version));
+
+  if (!release) {
+    return json({ ok: false, error: 'Release not found' }, 404);
+  }
+
+  return json({
+    id,
+    tagName: release.tagName,
+    name: release.name,
+    widgetInfo: release.widgetInfo ?? null,
   });
 }
 
@@ -357,16 +378,26 @@ async function proxyJson(url) {
   return proxied;
 }
 
-function findReleaseAsset(releases, version, fileName) {
+function findRelease(releases, version) {
   for (const release of releases) {
-    if (release.tagName !== version && release.name !== version) {
-      continue;
+    if (release.tagName === version || release.name === version) {
+      return release;
     }
+  }
 
-    for (const asset of release.assets || []) {
-      if (asset.name === fileName) {
-        return asset;
-      }
+  return null;
+}
+
+function findReleaseAsset(releases, version, fileName) {
+  const release = findRelease(releases, version);
+
+  if (!release) {
+    return null;
+  }
+
+  for (const asset of release.assets || []) {
+    if (asset.name === fileName) {
+      return asset;
     }
   }
 

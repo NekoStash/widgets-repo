@@ -145,6 +145,7 @@
 ```
 
 - `business_setup` is optional.
+- This endpoint returns the latest repository/default-branch `widget_info.json`.
 - `widgetInfo.type` defaults to `widget` when the source `widget_info.json` omits it.
 - `widgetInfo.type` may also be `wallpaper` when the source widget supports wallpaper metadata.
 
@@ -181,6 +182,14 @@
       "publishedAt": "2026-04-01T10:10:00Z",
       "url": "https://github.com/SiberiaApp/Xiaomi-RearScreen-Music/releases/tag/v1.0.0",
       "body": "<p dir=\"auto\">初始发布版本</p>",
+      "widgetInfo": {
+        "name": "音乐歌词",
+        "type": "widget",
+        "business_setup": {
+          "id": "music",
+          "renameable": false
+        }
+      },
       "assets": [
         {
           "id": 987654,
@@ -196,6 +205,26 @@
       ]
     }
   ]
+}
+```
+
+### `GET /widget/{id}/releases/{version}/widget-info`
+
+Returns the `widget_info.json` from the release tag/ref. `version` matches either `tagName` or the release name.
+
+```json
+{
+  "id": "music",
+  "tagName": "v1.0.0",
+  "name": "v1.0.0",
+  "widgetInfo": {
+    "name": "音乐歌词",
+    "type": "widget",
+    "business_setup": {
+      "id": "music",
+      "renameable": false
+    }
+  }
 }
 ```
 

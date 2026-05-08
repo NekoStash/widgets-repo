@@ -13,6 +13,7 @@
 - `indexes/recent-updates.json`
 - `data/{id}/description.json`
 - `data/{id}/author.json`
+- `data/{id}/widget-info.json`
 - `data/{id}/readme.json`
 - `data/{id}/releases.json`
 
@@ -24,12 +25,14 @@
 
 - `/widget/{id}/description`
 - `/widget/{id}/author`
+- `/widget/{id}/widget-info`
 - `/widget/{id}/readme`
 - `/widget/{id}/releases`
+- `/widget/{id}/releases/{version}/widget-info`
 - `/widget/{id}/releases/{version}/{file}`
 - `/recent-updates`
 
-Release 文件下载代理会从 `data/{id}/releases.json` 找到对应资源的 `downloadUrl`，再由边缘节点代理下载。
+Release tag 级别的 widget info 会从 `data/{id}/releases.json` 中对应 release 的 `widgetInfo` 返回。Release 文件下载代理会从 `data/{id}/releases.json` 找到对应资源的 `downloadUrl`，再由边缘节点代理下载。
 
 - 索引和 JSON 数据缓存 `1` 小时
 - Release 文件缓存 `30` 天

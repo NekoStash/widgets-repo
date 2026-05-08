@@ -9,6 +9,13 @@ export default {
     const indexBaseUrl = (env && env.INDEX_BASE_URL) || DEFAULT_INDEX_BASE_URL;
     const url = new URL(request.url);
 
+    const releaseWidgetInfoMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/widget-info$/);
+    if (releaseWidgetInfoMatch) {
+      return withRouteCache(request, ctx, CACHE_TTL_SECONDS, () =>
+        handleReleaseWidgetInfo(releaseWidgetInfoMatch[1], releaseWidgetInfoMatch[2], indexBaseUrl),
+      );
+    }
+
     const releaseAssetMatch = url.pathname.match(/^\/widget\/([^/]+)\/releases\/([^/]+)\/([^/]+)$/);
     if (releaseAssetMatch) {
       return withRouteCache(request, ctx, RELEASE_FILE_CACHE_TTL_SECONDS, () =>
@@ -80,6 +87,22 @@ async function handleSearch(request, indexBaseUrl) {
 
 async function handleWidgetFile(id, kind, indexBaseUrl) {
   return await fetchUpstreamJson(`${indexBaseUrl}/data/${encodeURIComponent(id)}/${kind}.json`);
+}
+
+async function handleReleaseWidgetInfo(id, version, indexBaseUrl) {
+  const releasesDoc = await fetchJsonCached(`${indexBaseUrl}/data/${encodeURIComponent(id)}/releases.json`);
+  const release = findRelease(releasesDoc.releases || [], decodeURIComponent(version));
+
+  if (!release) {
+    return json({ ok: false, error: 'Release not found' }, 404);
+  }
+
+  return json({
+    id,
+    tagName: release.tagName,
+    name: release.name,
+    widgetInfo: release.widgetInfo ?? null,
+  });
 }
 
 async function handleRecentUpdates(indexBaseUrl) {
@@ -189,16 +212,26 @@ function intersectTokenMatches(tokens, shardMap) {
   return result ? [...result].sort() : [];
 }
 
-function findReleaseAsset(releases, version, fileName) {
+function findRelease(releases, version) {
   for (const release of releases) {
-    if (release.tagName !== version && release.name !== version) {
-      continue;
+    if (release.tagName === version || release.name === version) {
+      return release;
     }
+  }
 
-    for (const asset of release.assets || []) {
-      if (asset.name === fileName) {
-        return asset;
-      }
+  return null;
+}
+
+function findReleaseAsset(releases, version, fileName) {
+  const release = findRelease(releases, version);
+
+  if (!release) {
+    return null;
+  }
+
+  for (const asset of release.assets || []) {
+    if (asset.name === fileName) {
+      return asset;
     }
   }
 
