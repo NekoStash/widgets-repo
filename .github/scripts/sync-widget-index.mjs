@@ -300,6 +300,21 @@ function recordIssue(issues, scope, error) {
   }
 }
 
+function recordWarning(scope, message) {
+  const text = message instanceof Error ? message.message : String(message);
+  const rendered = `[sync-widget-index] ${scope}: ${text}`;
+
+  console.warn(rendered);
+
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    process.stdout.write(`::warning::${escapeGithubActionsAnnotation(rendered)}\n`);
+  }
+}
+
+function escapeGithubActionsAnnotation(value) {
+  return String(value).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
+
 async function safeCall(issues, scope, fallback, operation) {
   try {
     return {
@@ -363,6 +378,14 @@ async function getReleaseWidgetInfo(token, owner, repo, ref, fallbackWidgetInfo,
 
     return normalizeWidgetInfo(releaseWidgetInfo);
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      recordWarning(
+        `Release widget_info ${owner}/${repo}@${ref}`,
+        `Invalid JSON, falling back to default widget_info.json: ${error.message}`,
+      );
+      return fallbackWidgetInfo;
+    }
+
     recordIssue(issues, `Release widget_info ${owner}/${repo}@${ref}`, error);
     return fallbackWidgetInfo;
   }
