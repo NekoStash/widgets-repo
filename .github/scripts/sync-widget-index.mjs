@@ -290,6 +290,84 @@ async function getOptionalJsonFile(token, owner, repo, filePath, ref) {
   }
 }
 
+function recordIssue(issues, scope, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  issues.push({ scope, message });
+  console.error(`[sync-widget-index] ${scope}: ${message}`);
+
+  if (error && typeof error === 'object' && error.data) {
+    console.error(JSON.stringify(error.data, null, 2));
+  }
+}
+
+async function safeCall(issues, scope, fallback, operation) {
+  try {
+    return {
+      value: await operation(),
+      failed: false,
+    };
+  } catch (error) {
+    recordIssue(issues, scope, error);
+    return {
+      value: typeof fallback === 'function' ? fallback(error) : fallback,
+      failed: true,
+    };
+  }
+}
+
+function getMetadataComponentId(metadataPath) {
+  const normalizedPath = `${metadataPath || ''}`.replace(/\\/g, '/');
+  const parts = normalizedPath.split('/');
+  return parts.length >= 2 ? parts[parts.length - 2] : normalizedPath;
+}
+
+function createFallbackRepository(parsedRepo, metadata) {
+  return {
+    owner: { login: parsedRepo.owner },
+    name: parsedRepo.repo,
+    full_name: parsedRepo.fullName,
+    html_url: metadata.repo,
+    description: '',
+    homepage: null,
+    default_branch: 'main',
+    language: null,
+    topics: [],
+    stargazers_count: 0,
+    subscribers_count: 0,
+    watchers_count: 0,
+    forks_count: 0,
+    open_issues_count: 0,
+    created_at: null,
+    updated_at: null,
+    pushed_at: null,
+  };
+}
+
+function createFallbackAuthor(login) {
+  return {
+    login,
+    name: login,
+    html_url: `https://github.com/${login}`,
+    avatar_url: '',
+    type: 'User',
+  };
+}
+
+async function getReleaseWidgetInfo(token, owner, repo, ref, fallbackWidgetInfo, issues) {
+  try {
+    const releaseWidgetInfo = await getOptionalJsonFile(token, owner, repo, 'widget_info.json', ref);
+
+    if (releaseWidgetInfo === null) {
+      return fallbackWidgetInfo;
+    }
+
+    return normalizeWidgetInfo(releaseWidgetInfo);
+  } catch (error) {
+    recordIssue(issues, `Release widget_info ${owner}/${repo}@${ref}`, error);
+    return fallbackWidgetInfo;
+  }
+}
+
 async function getReadme(token, owner, repo) {
   try {
     const readme = await requestJson('GET', `/repos/${owner}/${repo}/readme`, token);
@@ -755,46 +833,101 @@ async function loadMetadata(sourceToken, sourceRepo, metadataPath) {
   return metadata;
 }
 
-async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath, readmeSearchLimit) {
-  const metadata = await loadMetadata(sourceToken, sourceRepo, metadataPath);
+async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath, readmeSearchLimit, issues) {
+  const componentId = getMetadataComponentId(metadataPath);
+  const metadataResult = await safeCall(
+    issues,
+    `Load metadata ${componentId}`,
+    null,
+    () => loadMetadata(sourceToken, sourceRepo, metadataPath),
+  );
+
+  const metadata = metadataResult.value;
+  if (!metadata) {
+    return null;
+  }
+
   const parsedRepo = parseRepositoryUrl(metadata.repo);
 
   if (!parsedRepo) {
-    throw new Error(`Invalid repository URL in ${metadataPath}: ${metadata.repo}`);
+    recordIssue(issues, `Component ${componentId}`, new Error(`Invalid repository URL in ${metadataPath}: ${metadata.repo}`));
+    return null;
   }
 
-  const repository = await getRepository(publicToken, parsedRepo.owner, parsedRepo.repo);
-  const [authorProfile, readme, releases, widgetInfo] = await Promise.all([
-    getUser(publicToken, repository.owner.login),
-    getReadme(publicToken, parsedRepo.owner, parsedRepo.repo),
-    listReleases(publicToken, parsedRepo.owner, parsedRepo.repo),
-    getOptionalJsonFile(publicToken, parsedRepo.owner, parsedRepo.repo, 'widget_info.json'),
+  const repositoryResult = await safeCall(
+    issues,
+    `Fetch repository ${parsedRepo.fullName}`,
+    createFallbackRepository(parsedRepo, metadata),
+    () => getRepository(publicToken, parsedRepo.owner, parsedRepo.repo),
+  );
+  const repository = repositoryResult.value;
+  const repositoryOwnerLogin = repository.owner?.login || parsedRepo.owner;
+
+  const [authorProfileResult, readmeResult, releasesResult, widgetInfoResult] = await Promise.all([
+    safeCall(
+      issues,
+      `Fetch author ${parsedRepo.fullName}`,
+      createFallbackAuthor(repositoryOwnerLogin),
+      () => getUser(publicToken, repositoryOwnerLogin),
+    ),
+    safeCall(issues, `Fetch README ${parsedRepo.fullName}`, null, () => getReadme(publicToken, parsedRepo.owner, parsedRepo.repo)),
+    safeCall(issues, `Fetch releases ${parsedRepo.fullName}`, [], () => listReleases(publicToken, parsedRepo.owner, parsedRepo.repo)),
+    safeCall(
+      issues,
+      `Fetch widget info ${parsedRepo.fullName}`,
+      null,
+      () => getOptionalJsonFile(publicToken, parsedRepo.owner, parsedRepo.repo, 'widget_info.json'),
+    ),
   ]);
 
+  const authorProfile = authorProfileResult.value;
+  const readme = readmeResult.value;
+  const releases = Array.isArray(releasesResult.value) ? releasesResult.value : [];
+  const normalizedWidgetInfo = normalizeWidgetInfo(widgetInfoResult.value);
+
   const widgetName =
-    widgetInfo && typeof widgetInfo === 'object' && typeof widgetInfo.name === 'string' && widgetInfo.name.trim()
-      ? widgetInfo.name.trim()
+    normalizedWidgetInfo &&
+    typeof normalizedWidgetInfo === 'object' &&
+    typeof normalizedWidgetInfo.name === 'string' &&
+    normalizedWidgetInfo.name.trim()
+      ? normalizedWidgetInfo.name.trim()
       : repository.name;
-  const repositoryContext = repository.full_name;
+  const repositoryContext = repository.full_name || parsedRepo.fullName;
   const readmeSearchContent = readme?.content || '';
-  const renderedReadme = readme
-    ? {
-        ...readme,
-        content: await renderMarkdown(publicToken, readme.content, repositoryContext),
-      }
-    : null;
+  const renderedReadmeResult = readme
+    ? await safeCall(
+        issues,
+        `Render README ${parsedRepo.fullName}`,
+        { ...readme },
+        async () => ({
+          ...readme,
+          content: await renderMarkdown(publicToken, readme.content, repositoryContext),
+        }),
+      )
+    : { value: null, failed: false };
+  const renderedReadme = renderedReadmeResult.value;
   const renderedReleases = await mapWithConcurrency(
     releases,
     MARKDOWN_RENDER_CONCURRENCY,
     async (release) => {
-      const [renderedBody, releaseWidgetInfo] = await Promise.all([
-        renderMarkdown(publicToken, release.body || '', repositoryContext),
-        getOptionalJsonFile(publicToken, parsedRepo.owner, parsedRepo.repo, 'widget_info.json', release.tag_name),
-      ]);
+      const renderedBodyResult = await safeCall(
+        issues,
+        `Render release body ${parsedRepo.fullName}@${release.tag_name}`,
+        release.body || '',
+        () => renderMarkdown(publicToken, release.body || '', repositoryContext),
+      );
+      const releaseWidgetInfo = await getReleaseWidgetInfo(
+        publicToken,
+        parsedRepo.owner,
+        parsedRepo.repo,
+        release.tag_name,
+        normalizedWidgetInfo,
+        issues,
+      );
 
       return {
         ...mapRelease(release),
-        body: renderedBody,
+        body: renderedBodyResult.value,
         widgetInfo: normalizeWidgetInfo(releaseWidgetInfo),
       };
     },
@@ -830,7 +963,7 @@ async function buildComponent(sourceToken, publicToken, sourceRepo, metadataPath
       avatarUrl: authorProfile.avatar_url,
       type: authorProfile.type,
     },
-    widgetInfo: normalizeWidgetInfo(widgetInfo),
+    widgetInfo: normalizedWidgetInfo,
     readmeSearchContent,
     readme: renderedReadme,
     releases: renderedReleases,
@@ -905,21 +1038,45 @@ function getManagedFiles(entries) {
   );
 }
 
-async function writeLocalOutput(outputDir, desiredFiles) {
-  await rm(path.join(outputDir, 'data'), { recursive: true, force: true });
-  await rm(path.join(outputDir, 'indexes'), { recursive: true, force: true });
+async function writeLocalOutput(outputDir, desiredFiles, issues) {
+  try {
+    await rm(path.join(outputDir, 'data'), { recursive: true, force: true });
+  } catch (error) {
+    recordIssue(issues, `Clean local output data dir ${outputDir}`, error);
+  }
+
+  try {
+    await rm(path.join(outputDir, 'indexes'), { recursive: true, force: true });
+  } catch (error) {
+    recordIssue(issues, `Clean local output indexes dir ${outputDir}`, error);
+  }
 
   for (const [filePath, content] of desiredFiles) {
-    const absolutePath = path.join(outputDir, ...filePath.split('/'));
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, content, 'utf8');
+    try {
+      const absolutePath = path.join(outputDir, ...filePath.split('/'));
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, content, 'utf8');
+    } catch (error) {
+      recordIssue(issues, `Write local file ${filePath}`, error);
+    }
   }
 
   console.log(`Wrote ${desiredFiles.size} file(s) to ${outputDir}.`);
 }
 
-async function syncTargetRepo(targetToken, targetRepo, desiredFiles) {
-  const targetTree = await getTargetTree(targetToken, targetRepo);
+async function syncTargetRepo(targetToken, targetRepo, desiredFiles, issues, allowDeletes) {
+  const targetTreeResult = await safeCall(
+    issues,
+    `Load target tree ${targetRepo.owner}/${targetRepo.repo}`,
+    null,
+    () => getTargetTree(targetToken, targetRepo),
+  );
+
+  if (!targetTreeResult.value) {
+    return;
+  }
+
+  const targetTree = targetTreeResult.value;
   const existingFiles = getManagedFiles(targetTree.entries);
   const changedFiles = [];
   const deletedFiles = [];
@@ -932,9 +1089,11 @@ async function syncTargetRepo(targetToken, targetRepo, desiredFiles) {
     changedFiles.push({ path: filePath, content });
   }
 
-  for (const filePath of existingFiles.keys()) {
-    if (!desiredFiles.has(filePath)) {
-      deletedFiles.push(filePath);
+  if (allowDeletes) {
+    for (const filePath of existingFiles.keys()) {
+      if (!desiredFiles.has(filePath)) {
+        deletedFiles.push(filePath);
+      }
     }
   }
 
@@ -944,18 +1103,29 @@ async function syncTargetRepo(targetToken, targetRepo, desiredFiles) {
   }
 
   const treeEntries = [];
+  let appliedChangedFiles = 0;
 
   for (const file of changedFiles) {
-    const blob = await requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/blobs`, targetToken, {
-      content: file.content,
-      encoding: 'utf-8',
-    });
+    const blobResult = await safeCall(
+      issues,
+      `Create blob ${file.path}`,
+      null,
+      () => requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/blobs`, targetToken, {
+        content: file.content,
+        encoding: 'utf-8',
+      }),
+    );
 
+    if (!blobResult.value) {
+      continue;
+    }
+
+    appliedChangedFiles += 1;
     treeEntries.push({
       path: file.path,
       mode: '100644',
       type: 'blob',
-      sha: blob.sha,
+      sha: blobResult.value.sha,
     });
   }
 
@@ -968,33 +1138,61 @@ async function syncTargetRepo(targetToken, targetRepo, desiredFiles) {
     });
   }
 
-  const newTree = await requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/trees`, targetToken, {
-    base_tree: targetTree.treeSha,
-    tree: treeEntries,
-  });
-
-  const commit = await requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/commits`, targetToken, {
-    message: 'Update widget index data',
-    tree: newTree.sha,
-    parents: [targetTree.headSha],
-  });
-
-  await requestJson(
-    'PATCH',
-    `/repos/${targetRepo.owner}/${targetRepo.repo}/git/refs/heads/${encodeURIComponent(targetTree.defaultBranch)}`,
-    targetToken,
-    {
-      sha: commit.sha,
-      force: false,
-    },
+  const newTreeResult = await safeCall(
+    issues,
+    `Create git tree ${targetRepo.owner}/${targetRepo.repo}`,
+    null,
+    () => requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/trees`, targetToken, {
+      base_tree: targetTree.treeSha,
+      tree: treeEntries,
+    }),
   );
 
+  if (!newTreeResult.value) {
+    return;
+  }
+
+  const commitResult = await safeCall(
+    issues,
+    `Create commit ${targetRepo.owner}/${targetRepo.repo}`,
+    null,
+    () => requestJson('POST', `/repos/${targetRepo.owner}/${targetRepo.repo}/git/commits`, targetToken, {
+      message: 'Update widget index data',
+      tree: newTreeResult.value.sha,
+      parents: [targetTree.headSha],
+    }),
+  );
+
+  if (!commitResult.value) {
+    return;
+  }
+
+  const updateRefResult = await safeCall(
+    issues,
+    `Update branch ref ${targetRepo.owner}/${targetRepo.repo}`,
+    null,
+    () => requestJson(
+      'PATCH',
+      `/repos/${targetRepo.owner}/${targetRepo.repo}/git/refs/heads/${encodeURIComponent(targetTree.defaultBranch)}`,
+      targetToken,
+      {
+        sha: commitResult.value.sha,
+        force: false,
+      },
+    ),
+  );
+
+  if (!updateRefResult.value) {
+    return;
+  }
+
   console.log(
-    `Updated ${targetRepo.owner}/${targetRepo.repo}: ${changedFiles.length} changed, ${deletedFiles.length} deleted.`,
+    `Updated ${targetRepo.owner}/${targetRepo.repo}: ${appliedChangedFiles} changed, ${deletedFiles.length} deleted.`,
   );
 }
 
 export async function run() {
+  const issues = [];
   const sourceRepo = {
     owner: process.env.SOURCE_REPO_OWNER || 'NekoStash',
     repo: process.env.SOURCE_REPO_NAME || 'widgets-repo',
@@ -1013,41 +1211,71 @@ export async function run() {
     10,
   );
 
-  if (!localOutputDir && !targetToken) {
-    throw new Error('Missing TARGET_REPO_TOKEN. Set LOCAL_OUTPUT_DIR for local preview mode.');
-  }
+  try {
+    if (!localOutputDir && !targetToken) {
+      recordIssue(issues, 'Configuration', new Error('Missing TARGET_REPO_TOKEN. Set LOCAL_OUTPUT_DIR for local preview mode.'));
+      return;
+    }
 
-  if (!Number.isInteger(shardCount) || shardCount <= 0) {
-    throw new Error(`Invalid SEARCH_SHARD_COUNT: ${process.env.SEARCH_SHARD_COUNT}`);
-  }
+    if (!Number.isInteger(shardCount) || shardCount <= 0) {
+      recordIssue(issues, 'Configuration', new Error(`Invalid SEARCH_SHARD_COUNT: ${process.env.SEARCH_SHARD_COUNT}`));
+      return;
+    }
 
-  if (!Number.isInteger(readmeSearchLimit) || readmeSearchLimit <= 0) {
-    throw new Error(`Invalid README_SEARCH_LIMIT: ${process.env.README_SEARCH_LIMIT}`);
-  }
+    if (!Number.isInteger(readmeSearchLimit) || readmeSearchLimit <= 0) {
+      recordIssue(issues, 'Configuration', new Error(`Invalid README_SEARCH_LIMIT: ${process.env.README_SEARCH_LIMIT}`));
+      return;
+    }
 
-  const metadataPaths = await listMetadataFiles(sourceToken, sourceRepo);
-
-  if (metadataPaths.length === 0) {
-    throw new Error(`No metadata files found in ${sourceRepo.owner}/${sourceRepo.repo}.`);
-  }
-
-  const components = [];
-
-  for (const metadataPath of metadataPaths) {
-    console.log(`Indexing ${metadataPath}...`);
-    components.push(
-      await buildComponent(sourceToken, publicToken, sourceRepo, metadataPath, readmeSearchLimit),
+    const metadataPathsResult = await safeCall(
+      issues,
+      `List metadata files for ${sourceRepo.owner}/${sourceRepo.repo}`,
+      [],
+      () => listMetadataFiles(sourceToken, sourceRepo),
     );
+    const metadataPaths = metadataPathsResult.value || [];
+
+    if (metadataPaths.length === 0) {
+      recordIssue(issues, 'Source metadata', new Error(`No metadata files found in ${sourceRepo.owner}/${sourceRepo.repo}.`));
+      return;
+    }
+
+    const components = [];
+
+    for (const metadataPath of metadataPaths) {
+      console.log(`Indexing ${metadataPath}...`);
+      const componentResult = await safeCall(
+        issues,
+        `Build component ${getMetadataComponentId(metadataPath)}`,
+        null,
+        () => buildComponent(sourceToken, publicToken, sourceRepo, metadataPath, readmeSearchLimit, issues),
+      );
+
+      if (componentResult.value) {
+        components.push(componentResult.value);
+      }
+    }
+
+    if (components.length === 0) {
+      recordIssue(issues, 'Build components', new Error('No components were built successfully.'));
+      return;
+    }
+
+    const desiredFiles = buildDesiredFiles(components, sourceRepo, shardCount, readmeSearchLimit);
+    const hadIssuesBeforeOutput = issues.length > 0;
+
+    if (localOutputDir) {
+      await writeLocalOutput(localOutputDir, desiredFiles, issues);
+      return;
+    }
+
+    await syncTargetRepo(targetToken, targetRepo, desiredFiles, issues, !hadIssuesBeforeOutput);
+  } finally {
+    if (issues.length > 0) {
+      console.error(`Sync completed with ${issues.length} issue(s).`);
+      process.exitCode = 1;
+    }
   }
-
-  const desiredFiles = buildDesiredFiles(components, sourceRepo, shardCount, readmeSearchLimit);
-
-  if (localOutputDir) {
-    await writeLocalOutput(localOutputDir, desiredFiles);
-    return;
-  }
-
-  await syncTargetRepo(targetToken, targetRepo, desiredFiles);
 }
 
 const isMainModule = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
