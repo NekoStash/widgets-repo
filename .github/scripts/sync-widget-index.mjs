@@ -9,6 +9,8 @@ const DEFAULT_SEARCH_SHARD_COUNT = 64;
 const DEFAULT_README_SEARCH_LIMIT = 20000;
 const MARKDOWN_RENDER_CONCURRENCY = 4;
 const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const REGEX_PUBLIC_IMAGES = /https:\/\/github\.com\/[a-zA-Z0-9-]+\/[\w\-.]+\/assets\/\d+\/([0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12})/g;
+const REGEX_PUBLIC_IMAGES2 = /https:\/\/github\.com\/user-attachments\/assets\/([0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12})/g;
 const markdownRenderCache = new Map();
 
 function normalizeRepoUrl(url) {
@@ -228,11 +230,43 @@ async function renderMarkdown(token, text, context) {
     text,
     mode: 'gfm',
     context,
-  });
+  }).then((html) => replacePrivateImage(text, html));
 
   markdownRenderCache.set(cacheKey, pending);
 
   return await pending;
+}
+
+function replacePrivateImage(markdown, html) {
+  if (!markdown || !html) {
+    return html;
+  }
+
+  const publicMatches = new Map();
+
+  for (const match of markdown.matchAll(REGEX_PUBLIC_IMAGES)) {
+    publicMatches.set(match[0], match[1]);
+  }
+
+  for (const match of markdown.matchAll(REGEX_PUBLIC_IMAGES2)) {
+    publicMatches.set(match[0], match[1]);
+  }
+
+  if (publicMatches.size === 0) {
+    return html;
+  }
+
+  let result = html;
+
+  for (const [publicUrl, assetId] of publicMatches) {
+    const regexPrivateImages = new RegExp(
+      `https:\\/\\/private-user-images\\.githubusercontent\\.com\\/\\d+\\/\\d+-${assetId}\\..*?(?=")`,
+      'g',
+    );
+    result = result.replace(regexPrivateImages, () => publicUrl);
+  }
+
+  return result;
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {
